@@ -7,18 +7,83 @@ output: html_document
 
 ``` {r}
 library(rpart)
+install.packages("rpart.plot")
+install.packages("RColorBrewer")
+
 library(rpart.plot)
-library(rattle)
 library(RColorBrewer)
+library(ggplot2)
 
 train = read.csv("train.csv")
 test = read.csv("test.csv")
 
 
 # combine train and test data
-test$Survived = rep(NA,418)
+test$Survived = rep("None",418)
 alldata = rbind(train, test)
 attach(alldata)
+train$Pclass <- as.factor(train$Pclass)
+train$Survived <- as.factor(train$Survived)
+alldata$Survived <- as.factor(alldata$Survived)
+alldata$Pclass <- as.factor(alldata$Pclass)
+
+
+
+# Let us have a look at our data:
+
+
+table(alldata$Survived) # Much more people died than survived
+table(alldata$Pclass)  # Second and First class have a similar amount of people, third has many. 
+
+# Let us visualize this:
+# We can see that people from third class had a lower probability of surviving than people from the other classes.
+
+ggplot(data = train, aes(x = Pclass, fill = Survived )) + geom_histogram(stat = "count")
+
+# Also males have a lower probability of surviving ( Women and Children first?)
+
+ggplot(data = train, aes(x = Sex, fill = Survived )) + geom_histogram(stat = "count")
+
+# Let us deal with the name feature
+
+length(unique(as.character(alldata$Name)))  # Are there some names occurring two times?
+double.names <- as.character(alldata[which(duplicated(as.character(alldata$Name))),"Name"])
+double.names.entries <- alldata[which(as.character(alldata$Name) == double.names[1]|as.character(alldata$Name) == double.names[2]),]
+
+# Some people seem to have the same name, but they are not the same person. 
+# Now let us deal with the titles.
+
+Title = sapply(Name, FUN = function(x) {strsplit(as.character(x), split='[,.]')[[1]][2]})
+Title = substring(Title, 2)
+alldata$Title = as.character(Title)
+
+
+# That is a lot of titles, lets group them together.
+
+alldata$Title[alldata$Title %in% c("Col","Rev","Dr", "Capt", "Sir", "Don", "Major", "Jonkheer","the Countess", "Lady", "Dona")] = "Sir"
+alldata[which(alldata$Title == "Sir"),13] <- "Other"
+
+alldata$Title[alldata$Title %in% c("the Countess", "Lady", "Dona")] = "Lady"
+alldata$Title[alldata$Title=="Mlle" | alldata$Title=="Ms"] = "Miss"
+alldata$Title[alldata$Title=="Mme"] = "Mrs"
+alldata$Title = as.factor(alldata$Title)
+
+# Do these titles hold any predicitve power?
+ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count")
+##
+## Maybe leave Rev out later. Maybe also Dr.
+##
+
+# Now let us make the plot again and also include the Pclass.
+ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count", binwidth = 0.6) + facet_wrap("Pclass")
+
+
+# Let us turn to the sibspa variable. There is seven different levles of this variable. We will convert it into a factor and take a look at its predictive power.
+
+alldata$SibSp <- as.factor(alldata$SibSp)
+ggplot(alldata[1:891,], aes(x = SibSp, fill = Survived)) + geom_histogram(stat= "count", binwidth = 0.6) + facet_wrap(~Pclass+Title)
+
+# We note that travelling with fewer people increases the survival rate in some cases. Especially for Master and Miss. 
 
 # create decks
 alldata$Deck = substring(Cabin, 1, 1)
@@ -27,23 +92,7 @@ alldata$Deck = as.factor(alldata$Deck)
 
 
 
-Title = sapply(Name, FUN = function(x) {strsplit(as.character(x), split='[,.]')[[1]][2]})
-Title = substring(Title, 2)
-alldata$Title = Title
 
-
-
-
-# group titles together
-#alldata$Title[alldata$Title %in% c("Capt", "Sir", "Don", "Major")] = "Sir"
-#alldata$Title[alldata$Title %in% c("the Countess", "Jonkheer", "Lady", "Dona")] = "Lady"
-
-# group titles together
-alldata$Title[alldata$Title %in% c("Dr", "Capt", "Sir", "Don", "Major", "Jonkheer")] = "Sir"
-alldata$Title[alldata$Title %in% c("the Countess", "Lady", "Dona")] = "Lady"
-alldata$Title[alldata$Title=="Mlle" | alldata$Title=="Ms"] = "Miss"
-alldata$Title[alldata$Title=="Mme"] = "Mrs"
-alldata$Title = as.factor(alldata$Title)
 
 
 
