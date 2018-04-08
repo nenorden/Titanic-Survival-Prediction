@@ -63,8 +63,8 @@ alldata$Title = as.character(Title)
 alldata$Title[alldata$Title %in% c("Col","Rev","Dr", "Capt", "Sir", "Don", "Major", "Jonkheer","the Countess", "Lady", "Dona")] = "Sir"
 alldata[which(alldata$Title == "Sir"),13] <- "Other"
 
-alldata$Title[alldata$Title %in% c("the Countess", "Lady", "Dona")] = "Lady"
-alldata$Title[alldata$Title=="Mlle" | alldata$Title=="Ms"] = "Miss"
+
+alldata$Title[alldata$Title=="Mlle" | alldata$Title=="Ms"] = "Miss"  #We are assuming here that all Ms are not married, maybe consider a change.
 alldata$Title[alldata$Title=="Mme"] = "Mrs"
 alldata$Title = as.factor(alldata$Title)
 
@@ -83,18 +83,18 @@ ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(
 alldata$SibSp <- as.factor(alldata$SibSp)
 ggplot(alldata[1:891,], aes(x = SibSp, fill = Survived)) + geom_histogram(stat= "count", binwidth = 0.6) + facet_wrap(~Pclass+Title)
 
-# We note that travelling with fewer people increases the survival rate in some cases. Especially for Master and Miss. 
+# We note that travelling with fewer people increases the survival rate in some cases. Especially for Master and Miss. To be able to take this into account, we create a family size variable. 
+
+temp.sibsp <- c(train$SibSp, test$SibSp)
+temp.parch <- c(train$Parch, test$Parch)
+alldata$FamSize <- as.factor(temp.sibsp+temp.parch+1)
+
+ggplot(alldata[1:891,], aes(x = FamSize, fill = Survived)) + geom_histogram(stat= "count", binwidth = 0.6) + facet_wrap(~Pclass+Title)
 
 # create decks
 alldata$Deck = substring(Cabin, 1, 1)
 alldata$Deck[alldata$Deck==""] = "U" #unknown
 alldata$Deck = as.factor(alldata$Deck)
-
-
-
-
-
-
 
 ggplot(data = alldata,aes(x=as.factor(alldata$Survived), fill=alldata$Title)) + geom_bar(stat="count") 
 
@@ -167,9 +167,15 @@ write.csv(submit_tree2, "submit_tree2.csv", row.names = FALSE)
 
 ```
 
+
+
+
+
 ``` {r}
 library(randomForest)
 set.seed(100)
+
+
 
 ForestFit = randomForest(as.factor(Survived) ~ Title + FareAdj, data=trainAdj, importance=TRUE, ntree=5000)
 varImpPlot(ForestFit)
@@ -178,7 +184,32 @@ pred = predict(ForestFit, newdata = testAdj)
 submit_forest4 = data.frame(passengerId = rownames(testAdj), Survived = pred)
 write.csv(submit_forest4, "submit_forest4.csv", row.names=FALSE)
 
-# Only 0.755598 accuracy
+# try to use Title, family and pclass.
+
+```
+
+``` {r} 
+# Cross validation
+library(ggplot2)
+library(caret)
+library(doSNOW)
+library(e1071)
+
+train.set.1 = alldata[1:891, c("Pclass", "Title","FamSize")]
+train.set.1$Title <- as.factor(train.set.1$Title)
+rf.label <- as.factor(train$Survived)
+
+set.seed(5000)
+cross.10 <- createMultiFolds(rf.label, k=3, times = 10)
+ctrl.1 <- trainControl(method = "repeatedcv", number = 10, repeats = 10, index = cross.10)
+
+set.seed(2100)
+
+cv.result.1 <- train(x = train.set.1, y = rf.label, method = "rf", tuneLength = 3, ntree = 1000, trControl = ctrl.1 )
+#this will take some time
+cv.result.1
+
+## will create trian set tomorrow
 
 ```
 
