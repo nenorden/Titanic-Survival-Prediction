@@ -60,13 +60,29 @@ alldata$Title = as.character(Title)
 
 # That is a lot of titles, lets group them together.
 
-alldata$Title[alldata$Title %in% c("Col","Rev","Dr", "Capt", "Sir", "Don", "Major", "Jonkheer","the Countess", "Lady", "Dona")] = "Sir"
-alldata[which(alldata$Title == "Sir"),13] <- "Other"
 
+alldata$Title[alldata$Title %in% c("Don", "Jonkheer")] = "Sir"
+alldata$Title[alldata$Title %in% c("the Countess", "Lady", "Dona")] = "Lady"
+alldata$Title[alldata$Title %in% c("Col", "Capt","Major")] = "Military"
+
+# Let us not overfit, the seem to be the same as their sex and passenger class
 
 alldata$Title[alldata$Title=="Mlle" | alldata$Title=="Ms"] = "Miss"  #We are assuming here that all Ms are not married, maybe consider a change.
 alldata$Title[alldata$Title=="Mme"] = "Mrs"
+
+ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count")
+
+# Let us not overfit, the seem to be the same as their sex and passenger class
+
+ind_Tit_F = which(alldata$Title =="Lady")
+alldata$Title[ind_Tit] = "Mrs"
+
+ind_Tit_Male = which(alldata$Title =="Rev"|alldata$Title =="Military"|alldata$Title =="Dr"|alldata$Title =="Sir")
+alldata$Title[ind_Tit_Male] = "Mr"
+
 alldata$Title = as.factor(alldata$Title)
+
+
 
 # Do these titles hold any predicitve power?
 ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count")
@@ -195,7 +211,9 @@ library(caret)
 library(doSNOW)
 library(e1071)
 
-train.set.1 = alldata[1:891, c("Pclass", "Title","FamSize")]
+View(alldata)
+
+train.set.1 = alldata[1:891, c("Pclass", "Title","FareAdj","TravelSize")]
 train.set.1$Title <- as.factor(train.set.1$Title)
 rf.label <- as.factor(train$Survived)
 
@@ -212,6 +230,7 @@ cv.result.1
 ## will create trian set tomorrow
 
 ```
+
 
 ``` {r}
 library(party)
