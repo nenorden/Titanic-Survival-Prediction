@@ -7,12 +7,10 @@ output: html_document
 
 ``` {r}
 library(rpart)
-install.packages("rpart.plot")
-install.packages("RColorBrewer")
-
 library(rpart.plot)
 library(RColorBrewer)
 library(ggplot2)
+library(randomForest)
 
 train = read.csv("train.csv")
 test = read.csv("test.csv")
@@ -27,10 +25,7 @@ train$Survived <- as.factor(train$Survived)
 alldata$Survived <- as.factor(alldata$Survived)
 alldata$Pclass <- as.factor(alldata$Pclass)
 
-
-
 # Let us have a look at our data:
-
 
 table(alldata$Survived) # Much more people died than survived
 table(alldata$Pclass)  # Second and First class have a similar amount of people, third has many. 
@@ -60,7 +55,6 @@ alldata$Title = as.character(Title)
 
 # That is a lot of titles, lets group them together.
 
-
 alldata$Title[alldata$Title %in% c("Don", "Jonkheer")] = "Sir"
 alldata$Title[alldata$Title %in% c("the Countess", "Lady", "Dona")] = "Lady"
 alldata$Title[alldata$Title %in% c("Col", "Capt","Major")] = "Military"
@@ -75,20 +69,15 @@ ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(
 # Let us not overfit, the seem to be the same as their sex and passenger class
 
 ind_Tit_F = which(alldata$Title =="Lady")
-alldata$Title[ind_Tit] = "Mrs"
+alldata$Title[ind_Tit_F] = "Mrs"
 
 ind_Tit_Male = which(alldata$Title =="Rev"|alldata$Title =="Military"|alldata$Title =="Dr"|alldata$Title =="Sir")
 alldata$Title[ind_Tit_Male] = "Mr"
 
 alldata$Title = as.factor(alldata$Title)
 
-
-
 # Do these titles hold any predicitve power?
 ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count")
-##
-## Maybe leave Rev out later. Maybe also Dr.
-##
 
 # Now let us make the plot again and also include the Pclass.
 ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count", binwidth = 0.6) + facet_wrap("Pclass")
@@ -96,7 +85,7 @@ ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(
 
 # Let us turn to the sibspa variable. There is seven different levles of this variable. We will convert it into a factor and take a look at its predictive power.
 
-alldata$SibSp <- as.factor(alldata$SibSp)
+#alldata$SibSp <- as.factor(alldata$SibSp)
 ggplot(alldata[1:891,], aes(x = SibSp, fill = Survived)) + geom_histogram(stat= "count", binwidth = 0.6) + facet_wrap(~Pclass+Title)
 
 # We note that travelling with fewer people increases the survival rate in some cases. Especially for Master and Miss. To be able to take this into account, we create a family size variable. 
@@ -125,8 +114,9 @@ for(ticnr in levels(Ticket)) {
   alldata$FareAdj[alldata$Ticket==ticnr] = signif(alldata$Fare[(alldata$Ticket==ticnr)]/sum(alldata$Ticket==ticnr),4)
   alldata$TravelSize[(alldata$Ticket==ticnr)] =(sum(alldata$Ticket==ticnr))
 }
-#alldata$TravelSize = as.factor(alldata$TravelSize)
+
 alldata$FareAdj = as.numeric(alldata$FareAdj)
+
 # Deal with missing values
 summary(alldata)
 # One NA fare
@@ -135,83 +125,24 @@ FareFit = rpart(Fare ~ Sex + Pclass + Title + Deck + Embarked + TravelSize + Fam
 alldata$Fare[is.na(alldata$Fare)] = predict(FareFit, newdata=alldata[is.na(alldata$Fare),])
 alldata$FareAdj[is.na(alldata$FareAdj)] = alldata$Fare[is.na(alldata$FareAdj)]/sum(alldata$Ticket == alldata$Ticket[is.na(alldata$FareAdj)])
 
+# 2 missing embarkation ports. Use FareAdj as predictor
+EmbarkedFit = rpart(Embarked ~ FareAdj, data=alldata[alldata$Embarked!="",], method="class", maxdepth=3)
+alldata$Embarked[which(alldata$Embarked=="")] = predict(EmbarkedFit, newdata=alldata[alldata$Embarked=="",], type="class")
+
 # 263 NA ages
 AgeFit = randomForest(Age ~ FareAdj + Title + FamSize, data=alldata[!is.na(alldata$Age),], importance=TRUE, ntrees=500)
 alldata$Age[is.na(alldata$Age)] = round(predict(AgeFit, newdata=alldata[is.na(alldata$Age),]))
 
-trainAdj = alldata[!is.na(Survived), c("Survived", "Pclass", "Sex", "Age","Embarked", "Deck", "Title", "FamSize", "FareAdj", "TravelSize")]
-testAdj = alldata[is.na(Survived), c("Survived", "Pclass", "Sex", "Age","Embarked", "Deck", "Title", "FamSize", "FareAdj", "TravelSize")]
-
-
-# double check cross validation for age prediction features ALEX - and check whether features correct
-#rfcv(trainAdj[], alldata$Age[!is.na(alldata$Age)], cv.fold=10)
-
-alldata$Age[is.na(alldata$Age)] = predict(AgeFit, newdata=alldata[is.na(alldata$Age),])
-varImpPlot(AgeFit)
-
-```
-
-```{r}
-
-
-
-# 2 missing embarkation ports
-EmbarkedFit = rpart(Embarked ~ Sex + FareAdj + Pclass + Title + Deck + Age + FamSize + TravelSize, data=alldata[alldata$Embarked!="",], method="class", maxdepth=3) # decision tree with max depth of 3 to prevent overfitting
-# Only FareAdj relevant (variable importance=49)
-#fancyRpartPlot(EmbarkedFit)
-alldata$Embarked[which(alldata$Embarked=="")] = predict(EmbarkedFit, newdata=alldata[alldata$Embarked=="",], type="class")
-
-trainAdj = alldata[!is.na(Survived), c("Survived", "Pclass", "Sex", "Age","Embarked", "Deck", "Title", "FamSize", "FareAdj", "TravelSize")]
-testAdj = alldata[is.na(Survived), c("Survived", "Pclass", "Sex", "Age","Embarked", "Deck", "Title", "FamSize", "FareAdj", "TravelSize")]
-
 ```
 
 
-
-
-``` {r}
-SurvivedFit = rpart(as.factor(Survived) ~ ., data = trainAdj, method="class")
-fancyRpartPlot(SurvivedFit)
-summary(SurvivedFit)
-SurvivedFit$variable.importance
-
-pred = predict(SurvivedFit, newdata=testAdj)
-submit_tree2 = data.frame(PassengerId = rownames(testAdj), Survived = pred)
-write.csv(submit_tree2, "submit_tree2.csv", row.names = FALSE)
-
-# Best with 0.78947 accuracy
-
-```
-
-
-
-
-
-``` {r}
-library(randomForest)
-set.seed(100)
-
-
-
-ForestFit = randomForest(as.factor(Survived) ~ Title + FareAdj, data=trainAdj, importance=TRUE, ntree=5000)
-varImpPlot(ForestFit)
-
-pred = predict(ForestFit, newdata = testAdj)
-submit_forest4 = data.frame(passengerId = rownames(testAdj), Survived = pred)
-write.csv(submit_forest4, "submit_forest4.csv", row.names=FALSE)
-
-# try to use Title, family and pclass.
-
-```
-
+# Model fit and prediction
 ``` {r} 
 # Cross validation
 library(ggplot2)
 library(caret)
 library(doSNOW)
 library(e1071)
-
-View(alldata)
 
 train.set.1 = alldata[1:891, c("Pclass", "Title","FareAdj","TravelSize")]
 train.set.1$Title <- as.factor(train.set.1$Title)
@@ -223,50 +154,17 @@ ctrl.1 <- trainControl(method = "repeatedcv", number = 10, repeats = 10, index =
 
 set.seed(2100)
 
-cv.result.1 <- train(x = train.set.1, y = rf.label, method = "rf", tuneLength = 3, ntree = 1000, trControl = ctrl.1 )
+cv.result.1 <- train(x = train.set.1, y = rf.label, method = "rf", tuneLength = 3, ntree = 1000, trControl = ctrl.1)
 #this will take some time
 cv.result.1
 
-## will create trian set tomorrow
+final.model = cv.result.1$finalModel
+mtry = cv.result.1$bestTune
+
+test.set = alldata[892:1309,  c("Pclass", "Title","FareAdj","TravelSize")]
+pred = predict(final.model, test.set, mtry=mtry)
+
+df = data.frame(PassengerId = alldata$PassengerId[892:1309], Survived = pred)
+write.csv(df, "submit_cv2.csv", row.names=FALSE)
 
 ```
-
-
-``` {r}
-library(party)
-set.seed(100)
-cForestFit = cforest(as.factor(Survived) ~ ., data=trainAdj, controls = cforest_control(ntree=5000, mtry = 9))
-
-pred = predict(cForestFit, testAdj, OOB=TRUE, type="response")
-
-submit_forest2 = data.frame(PassengerId = rownames(testAdj), Survived = pred)
-#write.csv(submit_forest2, "submit_forest2.csv", row.names=FALSE)
-
-# 0.79425 best so far
-
-```
-
-``` {r}
-library(gbm)
-set.seed(100)
-gbm1 = gbm(Survived ??? . , data=trainAdj, distribution="bernoulli", n.trees=10000, cv.folds=5, interaction.depth=4)
-best.iter = gbm.perf(gbm1,method="cv")
-summary(gbm1, n.trees=best.iter)
-
-pred_boost1 = predict(gbm1, newdata=testAdj, n.trees=best.iter, type="response")
-pred_boost1 = round(pred_boost1)
-
-submit_boost1 = data.frame(PassengerId=rownames(testAdj), Survived=pred_boost1)
-write.csv(submit_boost1, "submit_boost1.csv", row.names=FALSE)
-
-```
-
-
-``` {r}
-glmFit = glm(Survived ~ ., data=trainAdj, family=binomial)
-summary(glmFit)
-glmFit = glm(Survived ~ PClass + Age + FamSize, data=trainAdj, family=binomial)
-
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
