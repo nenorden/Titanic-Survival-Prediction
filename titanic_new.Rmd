@@ -1,10 +1,14 @@
 ---
-title: "Untitled"
-author: "Eliza"
-date: "8 april 2018"
-output: html_document
+title: "Titanic survival prediction"
+date: "11 april 2018"
+author: "Eliza Norden, Alex Moellers, Sarah Catherine James"
+output:
+  pdf_document: default
+  html_document: 
+    keep_md: true
 ---
 
+# Read data and typecast relevant variables
 ``` {r}
 library(rpart)
 library(rpart.plot)
@@ -15,7 +19,6 @@ library(randomForest)
 train = read.csv("train.csv")
 test = read.csv("test.csv")
 
-
 # combine train and test data
 test$Survived = rep("None",418)
 alldata = rbind(train, test)
@@ -25,22 +28,24 @@ train$Survived <- as.factor(train$Survived)
 alldata$Survived <- as.factor(alldata$Survived)
 alldata$Pclass <- as.factor(alldata$Pclass)
 
-# Let us have a look at our data:
+```
 
+# Visualize data
+```{r}
 table(alldata$Survived) # Much more people died than survived
 table(alldata$Pclass)  # Second and First class have a similar amount of people, third has many. 
 
-# Let us visualize this:
-# We can see that people from third class had a lower probability of surviving than people from the other classes.
-
 ggplot(data = train, aes(x = Pclass, fill = Survived )) + geom_histogram(stat = "count")
-
-# Also males have a lower probability of surviving ( Women and Children first?)
-
 ggplot(data = train, aes(x = Sex, fill = Survived )) + geom_histogram(stat = "count")
 
-# Let us deal with the name feature
+```
+In total, survival rate 62%. Most passengers onboard stayed in third class.
+We can see that these had a lower probability of surviving than people from the other classes. We also see a strong survival bias among females. 
 
+# Feature extraction #1 - titles
+```{r}
+
+# Let us deal with the name feature
 length(unique(as.character(alldata$Name)))  # Are there some names occurring two times?
 double.names <- as.character(alldata[which(duplicated(as.character(alldata$Name))),"Name"])
 double.names.entries <- alldata[which(as.character(alldata$Name) == double.names[1]|as.character(alldata$Name) == double.names[2]),]
@@ -52,7 +57,6 @@ Title = sapply(Name, FUN = function(x) {strsplit(as.character(x), split='[,.]')[
 Title = substring(Title, 2)
 alldata$Title = as.character(Title)
 
-
 # That is a lot of titles, lets group them together.
 
 alldata$Title[alldata$Title %in% c("Don", "Jonkheer")] = "Sir"
@@ -61,12 +65,12 @@ alldata$Title[alldata$Title %in% c("Col", "Capt","Major")] = "Military"
 
 # Let us not overfit, the seem to be the same as their sex and passenger class
 
-alldata$Title[alldata$Title=="Mlle" | alldata$Title=="Ms"] = "Miss"  #We are assuming here that all Ms are not married, maybe consider a change.
+alldata$Title[alldata$Title=="Mlle" | alldata$Title=="Ms"] = "Miss" # We are assuming here that all Ms are unmarried.
 alldata$Title[alldata$Title=="Mme"] = "Mrs"
 
 ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count")
 
-# Let us not overfit, the seem to be the same as their sex and passenger class
+# Let us not overfit, they seem to be the same as their sex and passenger class
 
 ind_Tit_F = which(alldata$Title =="Lady")
 alldata$Title[ind_Tit_F] = "Mrs"
@@ -82,11 +86,15 @@ ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(
 # Now let us make the plot again and also include the Pclass.
 ggplot(data = alldata[1:891,], aes(x= Title, fill = Survived)) + geom_histogram(stat = "count", binwidth = 0.6) + facet_wrap("Pclass")
 
+```
 
-# Let us turn to the sibspa variable. There is seven different levles of this variable. We will convert it into a factor and take a look at its predictive power.
 
-#alldata$SibSp <- as.factor(alldata$SibSp)
-ggplot(alldata[1:891,], aes(x = SibSp, fill = Survived)) + geom_histogram(stat= "count", binwidth = 0.6) + facet_wrap(~Pclass+Title)
+# Feature extraction #2 - family size
+``` {r}
+
+# Let us turn to the sibspa variable. There is seven different levels of this variable. We will convert it into a factor and take a look at its predictive power.
+
+ggplot(alldata[1:891,], aes(x = as.factor(SibSp), fill = Survived)) + geom_histogram(stat= "count", binwidth = 0.6) + facet_wrap(~Pclass+Title)
 
 # We note that travelling with fewer people increases the survival rate in some cases. Especially for Master and Miss. To be able to take this into account, we create a family size variable. 
 
@@ -96,6 +104,11 @@ alldata$FamSize <- as.factor(temp.sibsp+temp.parch+1)
 
 ggplot(alldata[1:891,], aes(x = FamSize, fill = Survived)) + geom_histogram(stat= "count", binwidth = 0.6) + facet_wrap(~Pclass+Title)
 
+```
+Passengers holding the title Mr seem to be likely to die, regardless of passenger class, numbers of siblings/spouses or total family size. However, first class Mr's traveling with a small family seems to have improved survival rate over solo travelers and big families.
+
+# Feature extraction #3 - boat decks and individual passenger fares
+``` {r}
 # create decks
 alldata$Deck = substring(Cabin, 1, 1)
 alldata$Deck[alldata$Deck==""] = "U" #unknown
@@ -117,24 +130,30 @@ for(ticnr in levels(Ticket)) {
 
 alldata$FareAdj = as.numeric(alldata$FareAdj)
 
-# Deal with missing values
-summary(alldata)
-# One NA fare
-# Regression tree
-FareFit = rpart(Fare ~ Sex + Pclass + Title + Deck + Embarked + TravelSize + FamSize, data=alldata[!is.na(alldata$Fare),], method="anova")
-alldata$Fare[is.na(alldata$Fare)] = predict(FareFit, newdata=alldata[is.na(alldata$Fare),])
-alldata$FareAdj[is.na(alldata$FareAdj)] = alldata$Fare[is.na(alldata$FareAdj)]/sum(alldata$Ticket == alldata$Ticket[is.na(alldata$FareAdj)])
 
-# 2 missing embarkation ports. Use FareAdj as predictor
+``` 
+Fare adjusted for each passenger should be a better predictor than total ticket fare, since the fare data is more consistent. Instead, the size of the traveling company has been captured in its own variable.
+
+
+# Data imputation
+```{r}
+
+summary(alldata)
+# One NA adjusted fare. Estimate it using a regression tree.
+FareFit = rpart(FareAdj ~ Sex + Pclass + Title + Deck + Embarked + TravelSize + FamSize, data=alldata[!is.na(alldata$FareAdj),], method="anova")
+alldata$FareAdj[is.na(alldata$FareAdj)] = predict(FareFit, newdata=alldata[is.na(alldata$FareAdj),])
+# Fill in the corresponding ticket fare for completeness.
+alldata$Fare[is.na(alldata$Fare)] = alldata$FareAdj[is.na(alldata$Fare)]
+
+# 2 missing embarkation ports. Use FareAdj as predictor.
 EmbarkedFit = rpart(Embarked ~ FareAdj, data=alldata[alldata$Embarked!="",], method="class", maxdepth=3)
 alldata$Embarked[which(alldata$Embarked=="")] = predict(EmbarkedFit, newdata=alldata[alldata$Embarked=="",], type="class")
 
-# 263 NA ages
+# 263 NA ages. Regression by random forest.
 AgeFit = randomForest(Age ~ FareAdj + Title + FamSize, data=alldata[!is.na(alldata$Age),], importance=TRUE, ntrees=500)
 alldata$Age[is.na(alldata$Age)] = round(predict(AgeFit, newdata=alldata[is.na(alldata$Age),]))
 
 ```
-
 
 # Model fit and prediction
 ``` {r} 
@@ -144,20 +163,23 @@ library(caret)
 library(doSNOW)
 library(e1071)
 
+# Final choice of predictors
 train.set.1 = alldata[1:891, c("Pclass", "Title","FareAdj","TravelSize")]
 train.set.1$Title <- as.factor(train.set.1$Title)
 rf.label <- as.factor(train$Survived)
 
 set.seed(5000)
+# Split data into folds for cross validation
 cross.10 <- createMultiFolds(rf.label, k=3, times = 10)
 ctrl.1 <- trainControl(method = "repeatedcv", number = 10, repeats = 10, index = cross.10)
 
 set.seed(2100)
-
+# Cross validation
 cv.result.1 <- train(x = train.set.1, y = rf.label, method = "rf", tuneLength = 3, ntree = 1000, trControl = ctrl.1)
 #this will take some time
 cv.result.1
 
+# Best model and number of sampled variables retrieved from cross validation
 final.model = cv.result.1$finalModel
 mtry = cv.result.1$bestTune
 
@@ -165,6 +187,9 @@ test.set = alldata[892:1309,  c("Pclass", "Title","FareAdj","TravelSize")]
 pred = predict(final.model, test.set, mtry=mtry)
 
 df = data.frame(PassengerId = alldata$PassengerId[892:1309], Survived = pred)
-write.csv(df, "submit_cv2.csv", row.names=FALSE)
+write.csv(df, "submit_cv.csv", row.names=FALSE)
 
 ```
+The best random forest model uses 2 randomly sampled variables at each split. Predicted test accuracy is 0.833. The actual test accuracy, retrieved by prediction submission to the Kaggle competition, is 0.799.
+
+
